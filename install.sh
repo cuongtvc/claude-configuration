@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# Symlink tracked Claude Code config from this repo into ~/.claude.
+# Symlink tracked Claude Code config from this repo into ~/.claude, and the
+# scripts in bin/ into ~/.local/bin.
 # Idempotent: safe to re-run. An existing regular file is moved aside to
 # <name>.pre-install.bak (if it differs from the repo copy) before linking.
 set -euo pipefail
 
-repo=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/claude
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 dest=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
+bindest=$HOME/.local/bin
 items=(settings.json statusline.sh CLAUDE.md)
 
-mkdir -p "$dest"
-for name in "${items[@]}"; do
-  src=$repo/$name
-  dst=$dest/$name
+link() {
+  local src=$1 dst=$2 name
+  name=$(basename "$dst")
   if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ]; then
     echo "ok      $name"
-    continue
+    return
   fi
   if [ -e "$dst" ] || [ -L "$dst" ]; then
     # A regular file here usually means a tool replaced the symlink on save.
@@ -26,4 +27,12 @@ for name in "${items[@]}"; do
   fi
   ln -s "$src" "$dst"
   echo "linked  $name"
+}
+
+mkdir -p "$dest" "$bindest"
+for name in "${items[@]}"; do
+  link "$root/claude/$name" "$dest/$name"
+done
+for src in "$root"/bin/*; do
+  link "$src" "$bindest/$(basename "$src")"
 done

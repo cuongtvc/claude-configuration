@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# ccm: ask Claude (headless) for a commit message for the current changes.
+# Uses staged changes if any, otherwise all changes incl. untracked files.
+#
+#   ccm [-m model] [-y | -p] [-u] [hint...]
+#     -m model  model alias or name (default: $CLAUDE_COMMIT_MODEL or haiku)
+#     -y        commit without asking
+#     -p        print the message only (no prompt, no commit)
+#     -u        print token usage and cost to stderr
+#     hint      extra context passed to Claude, e.g. ccm "fixes font fallback"
+set -euo pipefail
+
+model=${CLAUDE_COMMIT_MODEL:-haiku}
+mode=ask
+show_usage=
+max_lines=${CCM_MAX_LINES:-2000}
+
+usage() { sed -n '2,10s/^# \{0,1\}//p' "$0"; }
+die() { echo "ccm: $*" >&2; exit 1; }
+
+while getopts ":m:ypuh" opt; do
+  case $opt in
+    m) model=$OPTARG ;;
+    y) mode=yes ;;
+    p) mode=print ;;
+    u) show_usage=1 ;;
+    h) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+  esac
+done
+shift $((OPTIND - 1))
+hint="$*"
+
+git rev-parse --git-dir >/dev/null 2>&1 || die "not inside a git repository"
+cd "$(git rev-parse --show-toplevel)"
+
+# Diff against HEAD, or the empty tree in a repo with no commits yet.
+base=$(git rev-parse --verify -q HEAD || git hash-object -t tree /dev/null)
+
+# Noise that bloats the prompt without saying anything about intent.
+excludes=()
+for p in package-lock.json yarn.lock pnpm-lock.yaml bun.lockb Cargo.lock \
+         poetry.lock uv.lock Gemfile.lock composer.lock go.sum flake.lock \
+         '*.min.js' '*.min.css' '*.map'; do
+  excludes+=(":(exclude,glob)**/$p")
+done
+
+if ! git diff --cached --quiet; then
+  scope=staged
+  stat=$(git diff --cached --stat)
+  diff=$(git diff --cached -- . "${excludes[@]}")
+else
+  scope=all
+  untracked=$(git ls-files -z --others --exclude-standard)
+  if git diff --quiet "$base" && [ -z "$untracked" ]; then
+    echo "ccm: nothing to commit" >&2
+    exit 1
+  fi
+  stat=$(git diff --stat "$base")
+  [ -n "$untracked" ] && stat+=$'\n'"Untracked files:"$'\n'"$untracked"
+  diff=$(git diff "$base" -- . "${excludes[@]}")
+  # -z: NUL-separated and unquoted, so names like café.txt resolve.
+  while IFS= read -r -d '' f; do
+    diff+=$'\n'$(git diff --no-index -- /dev/null "$f" || true)
+  done < <(git ls-files -z --others --exclude-standard -- . "${excludes[@]}")
+fi
+
+total=$(printf '%s\n' "$diff" | wc -l)
+if [ "$total" -gt "$max_lines" ]; then
+  diff=$(printf '%s\n' "$diff" | head -n "$max_lines")
+  diff+=$'\n'"[diff truncated: showing $max_lines of $total lines]"
+fi
+
+system='You write git commit messages. Output ONLY the raw commit message: no code fences, no preamble, no commentary.
+Format: an imperative subject line of at most 72 characters, no trailing period. If the change needs explaining, add a blank line and a short body (wrapped at 72) saying what changed and why. Omit the body for small, obvious changes.
+Match the style of the recent commits you are shown.'
+
+prompt="Branch: $(git branch --show-current 2>/dev/null || echo detached)
+
+Recent commits:
+$(git log -n 10 --format='- %s' 2>/dev/null || true)
+
+Changes ($scope):
+$stat
+${hint:+
+Hint from the author: $hint
+}
+Diff:
+$diff"
+
+[ -t 2 ] && echo "ccm: asking $model..." >&2
+
+# Strip everything Claude Code would normally add to the context: tools,
+# settings/CLAUDE.md, MCP servers, skills, and the default system prompt.
+# Thinking is off too (CCM_THINKING=<budget> re-enables it): it multiplied
+# output tokens several times over without improving the message.
+json=$(printf '%s' "$prompt" | MAX_THINKING_TOKENS=${CCM_THINKING:-0} claude -p \
+  --model "$model" \
+  --system-prompt "$system" \
+  --tools "" \
+  --setting-sources "" \
+  --strict-mcp-config \
+  --disable-slash-commands \
+  --no-session-persistence \
+  --output-format json) || die "claude failed: $(jq -r '.result // empty' <<<"$json" 2>/dev/null)"
+[ "$(jq -r '.is_error' <<<"$json")" = false ] || die "claude error: $(jq -r '.result' <<<"$json")"
+raw=$(jq -r '.result' <<<"$json")
+
+if [ -n "$show_usage" ]; then
+  jq -r '.usage as $u | "ccm: \($u.input_tokens + $u.cache_read_input_tokens + $u.cache_creation_input_tokens) in / \($u.output_tokens) out (\($u.output_tokens_details.thinking_tokens // 0) thinking) tokens, $\(.total_cost_usd * 10000 | round / 10000), \(.duration_ms / 100 | round / 10)s"' <<<"$json" >&2
+fi
+
+# Safety net: drop code fences and a chatty lead-in, trim blank edges.
+msg=$(printf '%s\n' "$raw" \
+  | sed -E '/^[[:space:]]*```/d' \
+  | sed -E '1{/^(here|sure|okay|commit message)[^:]*:[[:space:]]*$/Id}' \
+  | sed -e '/./,$!d')  # $(...) already trims trailing newlines
+[ -n "$msg" ] || die "claude returned an empty message"
+
+if [ "$mode" = print ]; then
+  printf '%s\n' "$msg"
+  exit 0
+fi
+
+printf '\n%s\n\n' "$msg"
+
+# Message goes via a file, not stdin, so `git commit -e` can use the tty.
+commit() {
+  msgfile=$(mktemp)
+  trap 'rm -f "$msgfile"' EXIT
+  printf '%s\n' "$msg" >"$msgfile"
+  if [ "$scope" = all ]; then git add -A; fi
+  git commit "$@" -F "$msgfile"
+}
+
+if [ "$mode" = yes ]; then
+  commit
+  exit 0
+fi
+
+note=""
+[ "$scope" = all ] && note=" (stages ALL changes incl. untracked)"
+read -r -p "Commit${note}? [y/N/e] " ans </dev/tty
+case $ans in
+  y|Y) commit ;;
+  e|E) commit -e ;;
+  *) echo "Not committed." ;;
+esac
