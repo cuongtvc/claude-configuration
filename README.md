@@ -53,3 +53,20 @@ than the diff. Lock files and minified files are left out of the diff, and
 diffs over 2000 lines (`CCM_MAX_LINES`) are truncated.
 Thinking is disabled (`CCM_THINKING=<budget>` turns it back on): on haiku it
 took ~10x the output tokens and 5x the time for no better a message.
+
+## create-claude-user.sh
+
+Creates a sudo user and installs Claude Code for them (Debian/Ubuntu, run as
+root on the target machine):
+
+```sh
+sudo ./create-claude-user.sh alice
+```
+
+It installs `sudo` and `curl` if missing, creates the user (prompting for a
+password), adds them to the `sudo` group (password sudo), and runs the native
+Claude Code installer as that user, so it lands in `~/.local/bin` and
+auto-updates. Re-running is safe: an existing user keeps their account and
+password, and an existing install is left alone. Log in afterwards with
+`su - alice` and `claude`. It does not set up SSH keys or copy this repo's
+config.
