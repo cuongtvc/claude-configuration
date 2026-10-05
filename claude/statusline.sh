@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code status line: user@host:cwd (branch) ctx:USEDk/SIZEk
+# Claude Code status line: user@host:cwd (branch) ctx:USEDk/SIZEk MODEL/EFFORT
 
 input=$(cat)
 
@@ -21,6 +21,11 @@ if [ -n "$tok" ]; then
   printf ' ctx:%dk' $(( (tok + 500) / 1000 ))
   [ -n "$win" ] && printf '/%dk' $(( win / 1000 ))
 fi
+
+# Model, plus effort level when the model supports it
+model=$(jq -r '.model.display_name // empty' <<<"$input")
+effort=$(jq -r '.effort.level // empty' <<<"$input")
+[ -n "$model" ] && printf ' \033[36m%s%s\033[00m' "$model" "${effort:+/$effort}"
 
 cfg=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
 
