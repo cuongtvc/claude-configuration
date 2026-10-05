@@ -63,12 +63,14 @@ root on the target machine):
 sudo ./create-claude-user.sh alice
 ```
 
-It installs `sudo`, `curl` and `procps` if missing, creates the user (prompting for a
+It installs `sudo`, `curl`, `procps`, `git` and `jq` if missing, creates the user (prompting for a
 password), adds them to the `sudo` group (password sudo), and runs the native
 Claude Code installer as that user, so it lands in `~/.local/bin` and
 auto-updates. If the user already exists it asks whether to delete them and
 their home (killing their processes) and start fresh; answering no, or having
 no terminal, keeps the account, password and install as they are. It refuses
 to delete system users (uid < 1000) or the user who ran `sudo`. Log in afterwards with
-`su - alice` and `claude`. It does not set up SSH keys or copy this repo's
-config.
+`su - alice` and `claude`. It also clones this repo into
+`~/claude-configuration` (or fast-forwards an existing clone, warning and
+carrying on if it can't) and runs its `install.sh` as the user. The clone is
+anonymous HTTPS, so the repo must be public. It does not set up SSH keys.

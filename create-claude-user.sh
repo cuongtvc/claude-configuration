@@ -3,6 +3,8 @@
 # Re-running for an existing user asks whether to delete it (and its home)
 # and start fresh; otherwise the account and password are kept, and the user
 # is only added to the sudo group and given Claude Code.
+# Either way, this repo is cloned (or fast-forwarded) into ~/claude-configuration
+# and its install.sh is run as the user.
 #
 # Usage: sudo ./create-claude-user.sh <username>
 set -euo pipefail
@@ -25,6 +27,8 @@ missing=()
 command -v sudo >/dev/null || missing+=(sudo)
 command -v curl >/dev/null || missing+=(curl)
 command -v pkill >/dev/null || missing+=(procps)
+command -v git >/dev/null || missing+=(git)
+command -v jq >/dev/null || missing+=(jq)  # statusline.sh
 if [ ${#missing[@]} -gt 0 ]; then
   echo "install ${missing[*]}"
   apt-get update -q
@@ -70,6 +74,18 @@ else
 fi
 
 v=$(sudo -iu "$user" claude --version) || die "claude not found on $user's PATH after install"
+
+repo=claude-configuration  # relative to $user's home, where sudo -i starts
+if sudo -iu "$user" test -d "$repo/.git"; then
+  sudo -iu "$user" git -C "$repo" pull -q --ff-only ||
+    echo "WARN    could not fast-forward ~$user/$repo; applying it as is" >&2
+else
+  # No prompt: a private repo would otherwise hang asking for a username.
+  sudo -iu "$user" env GIT_TERMINAL_PROMPT=0 git clone -q \
+    https://github.com/cuongtvc/claude-configuration.git "$repo" ||
+    die "clone failed (is the repo public?)"
+fi
+sudo -iu "$user" "$repo/install.sh"
 
 echo
 echo "done: $user ($v)"
