@@ -87,6 +87,17 @@ else
 fi
 sudo -iu "$user" "$repo/install.sh"
 
+# enabledPlugins alone leaves a fresh user needing /reload-plugins; install
+# them now. The official marketplace isn't known until added either.
+s=$repo/claude/settings.json
+for m in anthropics/claude-plugins-official \
+  $(sudo -iu "$user" jq -r '.extraKnownMarketplaces[].source.repo' "$s"); do
+  sudo -iu "$user" claude plugin marketplace add "$m"
+done
+for p in $(sudo -iu "$user" jq -r '.enabledPlugins | keys[]' "$s"); do
+  sudo -iu "$user" claude plugin install "$p"
+done
+
 echo
 echo "done: $user ($v)"
 echo "next: su - $user, then run claude to log in"

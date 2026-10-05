@@ -72,5 +72,6 @@ no terminal, keeps the account, password and install as they are. It refuses
 to delete system users (uid < 1000) or the user who ran `sudo`. Log in afterwards with
 `su - alice` and `claude`. It also clones this repo into
 `~/claude-configuration` (or fast-forwards an existing clone, warning and
-carrying on if it can't) and runs its `install.sh` as the user. The clone is
+carrying on if it can't), runs its `install.sh` as the user, and installs the
+plugins `settings.json` enables, so no `/reload-plugins` is needed. The clone is
 anonymous HTTPS, so the repo must be public. It does not set up SSH keys.
