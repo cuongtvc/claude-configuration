@@ -21,4 +21,26 @@ if [ -n "$tok" ]; then
   printf ' ctx:%dk' $(( (tok + 500) / 1000 ))
   [ -n "$win" ] && printf '/%dk' $(( win / 1000 ))
 fi
+
+cfg=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
+
+# Ponytail level, written by its hooks; missing or "off" = hidden
+pt=$(head -n1 "$cfg/.ponytail-active" 2>/dev/null | tr -d '[:space:]')
+case $pt in
+  ''|off) ;;
+  full) printf ' \033[38;5;108m[PONYTAIL]\033[0m' ;;
+  ultra) printf ' \033[38;5;173m[PONYTAIL:ULTRA]\033[0m' ;;
+  *) printf ' \033[38;5;108m[PONYTAIL:%s]\033[0m' "${pt^^}" ;;
+esac
+
+# Caveman mode for this session, written by its hooks; missing or "off" = hidden
+sid=$(jq -r '.session_id // empty' <<<"$input" | tr -cd 'A-Za-z0-9_-')
+f=$cfg/.caveman-sessions/$sid.mode
+[ -n "$sid" ] && [ -f "$f" ] || f=$cfg/.caveman-active
+cm=$(head -c 64 "$f" 2>/dev/null | tr -cd 'a-z0-9-')
+case $cm in
+  ''|off) ;;
+  caveman) printf ' \033[38;5;137m[CAVEMAN]\033[0m' ;;
+  *) printf ' \033[38;5;137m[CAVEMAN:%s]\033[0m' "${cm^^}" ;;
+esac
 exit 0
