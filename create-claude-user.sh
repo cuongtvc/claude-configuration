@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Create a sudo user and install Claude Code for them (Debian/Ubuntu).
-# Idempotent: safe to re-run. An existing user keeps their account and
-# password; they are only added to the sudo group and given Claude Code.
+# Re-running for an existing user asks whether to delete it (and its home)
+# and start fresh; otherwise the account and password are kept, and the user
+# is only added to the sudo group and given Claude Code.
 #
 # Usage: sudo ./create-claude-user.sh <username>
 set -euo pipefail
@@ -21,13 +22,27 @@ case " ${ID:-} ${ID_LIKE:-} " in
 esac
 
 missing=()
-for cmd in sudo curl; do
-  command -v "$cmd" >/dev/null || missing+=("$cmd")
-done
+command -v sudo >/dev/null || missing+=(sudo)
+command -v curl >/dev/null || missing+=(curl)
+command -v pkill >/dev/null || missing+=(procps)
 if [ ${#missing[@]} -gt 0 ]; then
   echo "install ${missing[*]}"
   apt-get update -q
   DEBIAN_FRONTEND=noninteractive apt-get install -y -q "${missing[@]}"
+fi
+
+if id "$user" >/dev/null 2>&1; then
+  # No terminal (e.g. ssh host 'bash -s' < script) counts as "no".
+  { : </dev/tty; } 2>/dev/null &&
+    read -r -p "user $user exists; delete it and its home, then recreate? [y/N] " ans </dev/tty || ans=
+  if [[ $ans == [yY] ]]; then
+    uid=$(id -u "$user")
+    [ "$uid" -ge 1000 ] || die "refusing to delete system user $user (uid $uid)"
+    [ "$user" != "${SUDO_USER:-}" ] || die "refusing to delete the user running this script"
+    pkill -KILL -u "$user" || true  # userdel would leave them running
+    userdel -r "$user"
+    echo "deleted user $user"
+  fi
 fi
 
 if id "$user" >/dev/null 2>&1; then
@@ -39,12 +54,7 @@ fi
 
 # Also covers a previous run whose password prompt failed: without a password
 # the user could never use sudo.
-case $(passwd -S "$user" | awk '{print $2}') in
-  L | NP)
-    echo "set password for $user"
-    passwd "$user"
-    ;;
-esac
+passwd -S "$user" | grep -q "^$user P " || { echo "set password for $user"; passwd "$user"; }
 
 usermod -aG sudo "$user"
 echo "ok      $user in sudo group"
@@ -59,8 +69,8 @@ else
   curl -fsSL https://claude.ai/install.sh | sudo -iu "$user" bash
 fi
 
-has_claude || die "claude not found on $user's PATH after install"
+v=$(sudo -iu "$user" claude --version) || die "claude not found on $user's PATH after install"
 
 echo
-echo "done: $user ($(sudo -iu "$user" claude --version))"
+echo "done: $user ($v)"
 echo "next: su - $user, then run claude to log in"

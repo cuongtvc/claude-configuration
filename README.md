@@ -63,10 +63,12 @@ root on the target machine):
 sudo ./create-claude-user.sh alice
 ```
 
-It installs `sudo` and `curl` if missing, creates the user (prompting for a
+It installs `sudo`, `curl` and `procps` if missing, creates the user (prompting for a
 password), adds them to the `sudo` group (password sudo), and runs the native
 Claude Code installer as that user, so it lands in `~/.local/bin` and
-auto-updates. Re-running is safe: an existing user keeps their account and
-password, and an existing install is left alone. Log in afterwards with
+auto-updates. If the user already exists it asks whether to delete them and
+their home (killing their processes) and start fresh; answering no, or having
+no terminal, keeps the account, password and install as they are. It refuses
+to delete system users (uid < 1000) or the user who ran `sudo`. Log in afterwards with
 `su - alice` and `claude`. It does not set up SSH keys or copy this repo's
 config.
