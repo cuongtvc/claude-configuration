@@ -60,7 +60,8 @@ Creates a sudo user and installs Claude Code for them (Debian/Ubuntu, run as
 root on the target machine):
 
 ```sh
-sudo ./create-claude-user.sh alice
+sudo ./create-claude-user.sh alice          # user + Claude Code only
+sudo ./create-claude-user.sh --full alice   # also this repo's config and plugins
 ```
 
 It installs `sudo`, `curl`, `procps`, `git` and `jq` if missing, creates the user (prompting for a
@@ -70,7 +71,9 @@ auto-updates. If the user already exists it asks whether to delete them and
 their home (killing their processes) and start fresh; answering no, or having
 no terminal, keeps the account, password and install as they are. It refuses
 to delete system users (uid < 1000) or the user who ran `sudo`. Log in afterwards with
-`su - alice` and `claude`. It also clones this repo into
+`su - alice` and `claude`.
+
+With `--full` it also clones this repo into
 `~/claude-configuration` (or fast-forwards an existing clone, warning and
 carrying on if it can't), runs its `install.sh` as the user, and installs the
 plugins `settings.json` enables, so no `/reload-plugins` is needed. The clone is

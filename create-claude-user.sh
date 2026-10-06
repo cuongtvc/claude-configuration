@@ -3,16 +3,25 @@
 # Re-running for an existing user asks whether to delete it (and its home)
 # and start fresh; otherwise the account and password are kept, and the user
 # is only added to the sudo group and given Claude Code.
-# Either way, this repo is cloned (or fast-forwarded) into ~/claude-configuration
-# and its install.sh is run as the user.
+# With --full, this repo is also cloned (or fast-forwarded) into
+# ~/claude-configuration, its install.sh is run as the user, and the plugins
+# its settings.json enables are installed.
 #
-# Usage: sudo ./create-claude-user.sh <username>
+# Usage: sudo ./create-claude-user.sh [--full] <username>
 set -euo pipefail
 
 die() { echo "error: $*" >&2; exit 1; }
+usage="usage: $0 [--full] <username>"
 
-[ $# -eq 1 ] || die "usage: $0 <username>"
-user=$1
+full= user=
+for arg; do
+  case $arg in
+    --full) full=1 ;;
+    -*) die "$usage" ;;
+    *) [ -z "$user" ] || die "$usage"; user=$arg ;;
+  esac
+done
+[ -n "$user" ] || die "$usage"
 [[ $user =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "invalid username: $user"
 [ "$(id -u)" -eq 0 ] || die "run as root"
 
@@ -74,6 +83,13 @@ else
 fi
 
 v=$(sudo -iu "$user" claude --version) || die "claude not found on $user's PATH after install"
+
+if [ -z "$full" ]; then
+  echo
+  echo "done: $user ($v)"
+  echo "next: su - $user, then run claude to log in"
+  exit 0
+fi
 
 repo=claude-configuration  # relative to $user's home, where sudo -i starts
 if sudo -iu "$user" test -d "$repo/.git"; then
