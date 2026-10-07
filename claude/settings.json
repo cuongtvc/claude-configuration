@@ -24,5 +24,20 @@
     }
   },
   "autoMemoryEnabled": false,
-  "theme": "auto"
+  "theme": "auto",
+  "permissions": {
+    "deny": [
+      "Artifact",
+      "ArtifactComments",
+      "ArtifactData",
+      "DesignSync",
+      "Workflow",
+      "mcp__claude_ai_Claude_Docs",
+      "Skill(artifact-design)",
+      "Skill(artifact-capabilities)",
+      "Skill(artifact-diagramming)",
+      "Skill(workflow-authoring)",
+      "Skill(anthropic-skills:docs)"
+    ]
+  }
 }

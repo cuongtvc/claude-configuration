@@ -4,7 +4,9 @@ My Claude Code config (`~/.claude`), version-controlled.
 
 `claude/` mirrors the files tracked from `~/.claude`:
 
-- `settings.json`: user settings
+- `settings.json`: user settings. `permissions.deny` blocks the Artifact,
+  Workflow and Claude Docs tools and their skills, so nothing is published
+  to claude.ai and no multi-agent workflows run
 - `statusline.sh`: status line (`user@host:cwd (branch) ctx:USEDk/SIZEk`)
 - `CLAUDE.md`: global instructions
 
