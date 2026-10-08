@@ -51,8 +51,9 @@ ccm -u                 # also print token usage and cost to stderr
 
 It runs `claude -p` with no tools, no settings or CLAUDE.md, no MCP servers,
 no skills and a short custom system prompt, so the request is little more
-than the diff. Lock files and minified files are left out of the diff, and
-diffs over 2000 lines (`CCM_MAX_LINES`) are truncated.
+than the diff. Lock files and minified files are left out of the diff, any
+single file's diff over 20 KB (`CCM_MAX_FILE_BYTES`) is replaced by a
+placeholder, and the whole diff is truncated at 100 KB (`CCM_MAX_BYTES`).
 Thinking is disabled (`CCM_THINKING=<budget>` turns it back on): on haiku it
 took ~10x the output tokens and 5x the time for no better a message.
 

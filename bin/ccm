@@ -13,7 +13,8 @@ set -euo pipefail
 model=${CLAUDE_COMMIT_MODEL:-haiku}
 mode=ask
 show_usage=
-max_lines=${CCM_MAX_LINES:-2000}
+max_bytes=${CCM_MAX_BYTES:-100000}
+max_file_bytes=${CCM_MAX_FILE_BYTES:-20000}
 
 usage() { sed -n '2,10s/^# \{0,1\}//p' "$0"; }
 die() { echo "ccm: $*" >&2; exit 1; }
@@ -48,27 +49,47 @@ done
 if ! git diff --cached --quiet; then
   scope=staged
   stat=$(git diff --cached --stat)
-  diff=$(git diff --cached -- . "${excludes[@]}")
 else
   scope=all
-  untracked=$(git ls-files -z --others --exclude-standard)
+  untracked=$(git ls-files --others --exclude-standard)
   if git diff --quiet "$base" && [ -z "$untracked" ]; then
     echo "ccm: nothing to commit" >&2
     exit 1
   fi
   stat=$(git diff --stat "$base")
   [ -n "$untracked" ] && stat+=$'\n'"Untracked files:"$'\n'"$untracked"
-  diff=$(git diff "$base" -- . "${excludes[@]}")
-  # -z: NUL-separated and unquoted, so names like café.txt resolve.
-  while IFS= read -r -d '' f; do
-    diff+=$'\n'$(git diff --no-index -- /dev/null "$f" || true)
-  done < <(git ls-files -z --others --exclude-standard -- . "${excludes[@]}")
 fi
 
-total=$(printf '%s\n' "$diff" | wc -l)
-if [ "$total" -gt "$max_lines" ]; then
-  diff=$(printf '%s\n' "$diff" | head -n "$max_lines")
-  diff+=$'\n'"[diff truncated: showing $max_lines of $total lines]"
+raw_diff() {
+  if [ "$scope" = staged ]; then
+    git diff --cached -- . "${excludes[@]}"
+    return
+  fi
+  git diff "$base" -- . "${excludes[@]}"
+  # -z: NUL-separated and unquoted, so names like café.txt resolve.
+  while IFS= read -r -d '' f; do
+    git diff --no-index -- /dev/null "$f" || true
+  done < <(git ls-files -z --others --exclude-standard -- . "${excludes[@]}")
+}
+
+# Replace any single file's diff over max_file_bytes with a placeholder, so
+# one big file can't crowd every other file out of the budget below.
+diff=$(raw_diff | LC_ALL=C awk -v max="$max_file_bytes" '
+  function flush() {
+    if (hdr == "") return
+    if (n > max) printf "%s\n[diff omitted: %d lines, %d bytes]\n", hdr, lines, n
+    else printf "%s", buf
+  }
+  /^diff --git / { flush(); hdr = $0; buf = ""; n = 0; lines = 0 }
+  { n += length($0) + 1; lines++; if (n <= max) buf = buf $0 "\n" }
+  END { flush() }')
+
+# Bytes, not lines: one minified line can blow the context on its own.
+# Here-strings, not pipes: head exiting early would SIGPIPE under pipefail.
+total=$(wc -c <<<"$diff")
+if [ "$total" -gt "$max_bytes" ]; then
+  diff=$(head -c "$max_bytes" <<<"$diff")
+  diff+=$'\n'"[diff truncated: showing $max_bytes of $total bytes]"
 fi
 
 system='You write git commit messages. Output ONLY the raw commit message: no code fences, no preamble, no commentary.
